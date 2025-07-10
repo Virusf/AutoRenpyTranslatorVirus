@@ -196,7 +196,3 @@ Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
 - [renpy-translator](https://github.com/anonymousException/renpy-translator) pour l'extraction des fichiers
 - [googletrans](https://github.com/ssut/googletrans) pour l'API Google Translate
 - [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate) pour l'alternative libre
-
-## 📧 Support
-
-Si vous rencontrez des problèmes, n'hésitez pas à ouvrir une issue sur GitHub.
