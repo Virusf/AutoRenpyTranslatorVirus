@@ -1,198 +1,198 @@
 # Auto Renpy Translator
 
-Un outil automatique de traduction pour les projets Ren'Py qui traduit automatiquement tous les fichiers de traduction générés.
+An automatic translation tool for Ren'Py projects that translates all generated translation files automatically.
 
-## 📋 Prérequis
+## 📋 Requirements
 
-- Python 3.6 ou supérieur
-- Un projet Ren'Py avec des fichiers de traduction extraits
-- Connexion Internet (pour Google Translate) ou LibreTranslate local
+- Python 3.6 or later
+- A Ren'Py project with extracted translation files
+- Internet connection (for Google Translate) or local LibreTranslate
 
-## 🚀 Installation et Utilisation
+## 🚀 Installation and Usage
 
-### Étape 1 : Extraction des fichiers de traduction
+### Step 1: Extract Translation Files
 
-Avant d'utiliser cet outil, vous devez d'abord extraire les fichiers de traduction de votre projet Ren'Py :
+Before using this tool, you must first extract translation files from your Ren'Py project:
 
-1. Téléchargez et utilisez **renpy-translator** :
+1. Download and use **renpy-translator**:
    ```bash
    git clone https://github.com/anonymousException/renpy-translator
    ```
 
-2. Suivez les instructions du projet renpy-translator pour extraire les fichiers `.rpy` de traduction dans le dossier `game/tl/[langue]/`
+2. Follow the instructions of the renpy-translator project to extract `.rpy` files into the `game/tl/[language]/` folder.
 
-### Étape 2 : Utilisation de l'Auto-traducteur
+### Step 2: Use the Auto Translator
 
-1. **Clonez ce projet** dans le répertoire de votre jeu Ren'Py :
+1. **Clone this project** into your Ren'Py game directory:
    ```bash
-   git clone https://github.com/votre-username/auto-renpy-translator
+   git clone https://github.com/your-username/auto-renpy-translator
    ```
 
-2. **Placez les fichiers** dans le dossier racine de votre projet Ren'Py :
+2. **Place the files** into the root of your Ren'Py project:
    ```
-   MonJeuRenpy/
+   MyRenpyGame/
    ├── game/
    │   ├── tl/
-   │   │   └── french/  # Fichiers .rpy extraits par renpy-translator
+   │   │   └── french/  # .rpy files extracted by renpy-translator
    │   └── ...
    ├── AutoRenpyTranslator.py
    └── AutoRenpyTranslator.bat
    ```
 
-3. **Lancez la traduction** :
-   
-   **Sur Windows :**
+3. **Run the translator**:
+
+   **On Windows:**
    ```bash
    AutoRenpyTranslator.bat
    ```
-   
-   **Sur Linux/Mac :**
+
+   **On Linux/Mac:**
    ```bash
    python AutoRenpyTranslator.py
    ```
 
-## ⚙️ Options avancées
+## ⚙️ Advanced Options
 
-### Utilisation en ligne de commande
+### CLI Usage
 
 ```bash
-# Traduction automatique (Google Translate)
+# Automatic translation (Google Translate)
 python AutoRenpyTranslator.py
 
-# Avec LibreTranslate local
+# Using local LibreTranslate
 python AutoRenpyTranslator.py --service libretranslate
 
-# Spécifier un chemin personnalisé
-python AutoRenpyTranslator.py --path /chemin/vers/game
+# Specify a custom path
+python AutoRenpyTranslator.py --path /path/to/game
 
-# Traduire vers une autre langue
+# Translate to another language
 python AutoRenpyTranslator.py --lang es --translation-lang spanish
 
-# Traduire un fichier spécifique
+# Translate a specific file
 python AutoRenpyTranslator.py --file game/tl/french/script.rpy
 ```
 
-### Paramètres disponibles
+### Available Parameters
 
-- `--path` : Chemin vers le dossier `game` (détection automatique par défaut)
-- `--lang` : Code de langue cible (par défaut: `fr`)
-- `--translation-lang` : Nom du dossier de langue (par défaut: `french`)
-- `--service` : Service de traduction (`google` ou `libretranslate`)
-- `--libretranslate-url` : URL de LibreTranslate (par défaut: `http://localhost:5000`)
-- `--file` : Traduire un fichier spécifique
+- `--path`: Path to the `game` folder (auto-detected by default)
+- `--lang`: Target language code (default: `fr`)
+- `--translation-lang`: Name of the language folder (default: `french`)
+- `--service`: Translation service (`google` or `libretranslate`)
+- `--libretranslate-url`: LibreTranslate URL (default: `http://localhost:5000`)
+- `--file`: Translate a specific file
 
-## 🔧 Services de traduction
+## 🔧 Translation Services
 
-### Google Translate (par défaut)
-- **Avantages** : Gratuit, aucune configuration requise
-- **Inconvénients** : Limité à 5000 caractères par requête, peut être bloqué en cas d'usage intensif
+### Google Translate (default)
+- **Pros**: Free, no setup required
+- **Cons**: Limited to 5000 characters per request, may get rate-limited
 
 ### LibreTranslate
-- **Avantages** : Illimité, privé, rapide
-- **Inconvénients** : Nécessite une installation locale
+- **Pros**: Unlimited, private, fast
+- **Cons**: Requires local installation
 
-#### Installation de LibreTranslate
+#### Install LibreTranslate
 
 ```bash
-# Avec pip
+# Using pip
 pip install libretranslate
 
-# Lancer le serveur
+# Start the server
 libretranslate --host 0.0.0.0 --port 5000
 
-# Puis utiliser l'auto-traducteur
+# Then use the translator
 python AutoRenpyTranslator.py --service libretranslate
 ```
 
-## 📁 Structure du projet
+## 📁 Project Structure
 
 ```
-MonJeuRenpy/
+MyRenpyGame/
 ├── game/
 │   ├── tl/
-│   │   └── french/           # Fichiers .rpy à traduire
+│   │   └── french/           # .rpy files to translate
 │   │       ├── script.rpy
 │   │       ├── characters.rpy
 │   │       └── ...
-│   ├── change_language_entrance.rpy    # Généré automatiquement
-│   ├── set_default_language_at_startup.rpy  # Généré automatiquement
+│   ├── change_language_entrance.rpy    # Auto-generated
+│   ├── set_default_language_at_startup.rpy  # Auto-generated
 │   └── ...
-├── backup_translations_YYYYMMDD_HHMMSS/  # Sauvegarde automatique
+├── backup_translations_YYYYMMDD_HHMMSS/  # Auto backup
 ├── AutoRenpyTranslator.py
 └── AutoRenpyTranslator.bat
 ```
 
-## 🛡️ Sécurité
+## 🛡️ Safety
 
-- **Sauvegarde automatique** : Une sauvegarde est créée automatiquement avant chaque traduction
-- **Préservation des balises** : Les balises Ren'Py (`{b}`, `{i}`, `{w}`, etc.) sont préservées
-- **Gestion des erreurs** : Les erreurs n'interrompent pas le processus
+- **Auto-backup**: A backup is created before each translation
+- **Tag preservation**: Ren'Py tags (`{b}`, `{i}`, `{w}`, etc.) are preserved
+- **Error handling**: Errors do not stop the process
 
-## 🌐 Langues supportées
+## 🌐 Supported Languages
 
-Le script supporte toutes les langues disponibles dans Google Translate. Exemples :
+The script supports all languages available in Google Translate. Examples:
 
-- `fr` : Français
-- `es` : Espagnol
-- `de` : Allemand
-- `it` : Italien
-- `pt` : Portugais
-- `ru` : Russe
-- `ja` : Japonais
-- `ko` : Coréen
-- `zh` : Chinois
+- `fr`: French
+- `es`: Spanish
+- `de`: German
+- `it`: Italian
+- `pt`: Portuguese
+- `ru`: Russian
+- `ja`: Japanese
+- `ko`: Korean
+- `zh`: Chinese
 
-## 🔍 Fonctionnalités
+## 🔍 Features
 
-- ✅ **Détection automatique** du dossier `game`
-- ✅ **Traduction intelligente** qui préserve les balises Ren'Py
-- ✅ **Sauvegarde automatique** avant traduction
-- ✅ **Gestion des erreurs** robuste
-- ✅ **Support des gros fichiers** (découpage automatique)
-- ✅ **Installation automatique** des dépendances
-- ✅ **Génération automatique** des fichiers de configuration de langue
-- ✅ **Barre de progression** pour suivre l'avancement
+- ✅ **Auto-detection** of the `game` folder
+- ✅ **Smart translation** that preserves Ren'Py tags
+- ✅ **Automatic backup** before translation
+- ✅ **Robust error handling**
+- ✅ **Large file support** (auto chunking)
+- ✅ **Auto dependency installation**
+- ✅ **Automatic generation** of language config files
+- ✅ **Progress bar** to track progress
 
-## 🐛 Dépannage
+## 🐛 Troubleshooting
 
-### Problèmes courants
+### Common Issues
 
-**Erreur "Dossier game introuvable"**
-- Vérifiez que vous êtes dans le bon répertoire
-- Utilisez `--path` pour spécifier le chemin manuellement
+**"Game folder not found" error**
+- Ensure you're in the correct directory
+- Use `--path` to manually specify the folder
 
-**Erreur Google Translate**
-- Vérifiez votre connexion Internet
-- Essayez d'attendre quelques minutes (limite de taux)
-- Passez à LibreTranslate : `--service libretranslate`
+**Google Translate error**
+- Check your internet connection
+- Wait a few minutes (rate-limiting)
+- Try LibreTranslate: `--service libretranslate`
 
-**Erreur LibreTranslate**
-- Vérifiez que LibreTranslate est installé et lancé
-- Testez l'URL : `curl http://localhost:5000/languages`
+**LibreTranslate error**
+- Check that LibreTranslate is installed and running
+- Test the URL: `curl http://localhost:5000/languages`
 
-## 📝 Workflow complet
+## 📝 Full Workflow
 
-1. **Préparer le projet Ren'Py** avec les fichiers sources
-2. **Extraire les traductions** avec [renpy-translator](https://github.com/anonymousException/renpy-translator)
-3. **Cloner cet outil** dans le dossier du projet
-4. **Lancer la traduction** avec `AutoRenpyTranslator.bat`
-5. **Tester le jeu** avec les nouvelles traductions
-6. **Ajuster si nécessaire** et relancer
+1. **Prepare your Ren'Py project** with source files
+2. **Extract translations** with [renpy-translator](https://github.com/anonymousException/renpy-translator)
+3. **Clone this tool** into your project folder
+4. **Run the translation** with `AutoRenpyTranslator.bat`
+5. **Test the game** with the new translations
+6. **Tweak if needed** and re-run
 
-## 🤝 Contribution
+## 🤝 Contributing
 
-Les contributions sont les bienvenues ! N'hésitez pas à :
-- Signaler des bugs
-- Proposer des améliorations
-- Ajouter de nouvelles fonctionnalités
-- Améliorer la documentation
+Contributions are welcome! Feel free to:
+- Report bugs
+- Suggest improvements
+- Add new features
+- Improve the documentation
 
-## 📄 Licence
+## 📄 License
 
-Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
+This project is licensed under the MIT License. See the `LICENSE` file for more info.
 
-## 🙏 Remerciements
+## 🙏 Thanks
 
-- [renpy-translator](https://github.com/anonymousException/renpy-translator) pour l'extraction des fichiers
-- [googletrans](https://github.com/ssut/googletrans) pour l'API Google Translate
-- [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate) pour l'alternative libre
+- [renpy-translator](https://github.com/anonymousException/renpy-translator) for extracting files
+- [googletrans](https://github.com/ssut/googletrans) for the Google Translate API
+- [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate) for the free alternative
