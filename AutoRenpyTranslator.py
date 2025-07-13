@@ -330,6 +330,30 @@ class RenpyAutoTranslator:
         # Supprimer les balises {w} pour éviter les bugs
         return re.sub(r'\{w\}', '', translated_text)
 
+
+    def fix_quotes_universal(self, lines):
+        import re
+        fixed = []
+        pattern = re.compile(r'^(\s*\w*\s*)(")(.*)(")\s*$')
+        for line in lines:
+            match = pattern.match(line)
+            if match:
+                prefix, openq, content, closeq = match.groups()
+                # Remplace les simples quotes internes proprement
+                safe_content = content.replace("'", "\\'")
+                if content.startswith('"') or content.endswith('"') or re.search(r'(?<!\\)"', content):
+                    if not (content.startswith("'") and content.endswith("'")):
+                        fixed_line = f"{prefix}'{safe_content}'\n"
+                        fixed.append(fixed_line)
+                    else:
+                        fixed.append(line)
+                else:
+                    fixed.append(line)
+            else:
+                fixed.append(line)
+        return fixed
+
+
     def translate_file(self, input_file: str, target_lang: str = 'fr') -> Tuple[int, int]:
         """Traduit un fichier Ren'Py et retourne (lignes_traduites, erreurs)"""
         if not os.path.exists(input_file):
@@ -374,12 +398,10 @@ class RenpyAutoTranslator:
                 if match:
                     original = match.group(1)
 
-                    # --- Début de la zone à modifier ---
-                    # Capturer le préfixe (indentation et 'new "') et le suffixe ('"\n' ou autre)
-                    prefix = line[:match.start(1)-1] # Capture jusqu'au guillemet ouvrant
-                    suffix = line[match.end(1)+1:]   # Capture à partir du guillemet fermant + 1
+                    # --- Correction : plus de replace, plus d'escape ---
+                    prefix = line[:match.start(1)-1] 
+                    suffix = line[match.end(1)+1:]
 
-                    # Éviter de traduire les textes vides ou très courts
                     if len(original.strip()) < 3:
                         translated_lines.append(line)
                         continue
@@ -387,39 +409,26 @@ class RenpyAutoTranslator:
                     try:
                         clean_text, _ = self.preserve_renpy_tags(original)
 
-                        # Pour les très longs textes, diviser en sections
                         if len(clean_text) > 1000:
                             translated_clean = self._translate_long_text(clean_text, target_lang)
                         else:
                             translated_clean = self.translate_text(clean_text, target_lang)
 
                         translated_text = self.restore_renpy_tags(translated_clean, original)
-
-                        # Échapper les guillemets standard et potentiellement d'autres caractères problématiques
-                        # Si tu identifies d'autres caractères (comme “ ou ”) qui cassent,
-                        # tu peux ajouter d'autres .replace() ici.
-                        escaped_translated_text = translated_text.replace('"', '\\"')
-                        # Exemple si les guillemets typographiques cassent :
-                        # escaped_translated_text = escaped_translated_text.replace('“', '\\"').replace('”', '\\"')
-
-
-                        # Reconstruire la ligne manuellement
-                        translated_line = f'{prefix}"{escaped_translated_text}"{suffix}'
-
-                        # --- Fin de la zone à modifier ---
+                        translated_line = f'{prefix}"{translated_text}"{suffix}'
 
                         translated_lines.append(translated_line)
                         translated_count += 1
-                        time.sleep(0.1) # Garder une petite pause entre les requêtes
+                        time.sleep(0.1)
 
                     except Exception as e:
                         print(f"❌ Erreur à la ligne {i}: {e}")
-                        translated_lines.append(line) # Ajouter la ligne originale en cas d'erreur
+                        translated_lines.append(line)
                         error_count += 1
                 else:
-                    # Si le regex initial matche "new " mais qu'il n'y a pas de texte entre guillemets (rare)
                     translated_lines.append(line)
                 continue
+
 
 
             # Cas général : traduire tous les "..." trouvés sur la ligne (ex : "Author" "Text")
@@ -443,6 +452,8 @@ class RenpyAutoTranslator:
                 translated_lines.append(new_line)
             else:
                 translated_lines.append(line)
+
+        translated_lines = self.fix_quotes_universal(translated_lines)
 
         with open(input_file, 'w', encoding='utf-8') as f:
             f.writelines(translated_lines)
