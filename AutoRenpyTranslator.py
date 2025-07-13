@@ -64,6 +64,8 @@ def safe_import():
 # Importation avec installation auto
 requests, Translator = safe_import()
 
+from tqdm import tqdm
+
 class RenpyAutoTranslator:
     def __init__(self, service='google', libretranslate_url='http://localhost:5000'):
         self.service = service
@@ -195,12 +197,13 @@ class RenpyAutoTranslator:
         translated_count = 0
         error_count = 0
 
-        for i, line in enumerate(lines):
-            # Déjà traduit ou non translatent ?
-            if re.match(r'^\s*#', line) or re.match(r'^\s* $ ', line):
+        # Affiche la barre de progression sur le fichier entier
+        for i, line in enumerate(tqdm(lines, desc=f"Traduction – {os.path.basename(input_file)}", ncols=100)):
+            # Ignore les commentaires & lignes vides
+            if re.match(r'^\s*#', line) or re.match(r'^\s*$', line):
                 translated_lines.append(line)
                 continue
-            # Cas général : traduire les dialogues Ren'Py
+            # Recherche de dialogue à traduire
             matches = list(re.finditer(r'"((?:[^"\\]|\\.)*)"', line))
             if matches:
                 new_line = line
@@ -211,7 +214,6 @@ class RenpyAutoTranslator:
                         translated_clean = self.translate_text(clean_text, target_lang)
                         translated_text = self.restore_renpy_tags(translated_clean, original)
                         translated_text = translated_text.replace('"', '\\"')
-                        # replace one group each loop
                         new_line = new_line.replace(f'"{original}"', f'"{translated_text}"', 1)
                         translated_count += 1
                         time.sleep(0.1)
@@ -221,15 +223,16 @@ class RenpyAutoTranslator:
                 translated_lines.append(new_line)
             else:
                 translated_lines.append(line)
-        
-        # >> Correction robuste des quotes et apostrophes juste avant d'écrire <<
+
+        # >> Correction robuste des quotes/apostrophes avant écriture <<
         translated_lines = self.fix_quotes_universal(translated_lines)
 
         with open(input_file, 'w', encoding='utf-8') as f:
             f.writelines(translated_lines)
 
-        print(f"✓ {translated_count} lignes traduites – ⚠ {error_count} erreurs")
+        print(f"\n✓ {translated_count} lignes traduites – ⚠ {error_count} erreurs dans {input_file}")
         return translated_count, error_count
+
 
     def generate_language_files(self, game_path: str):
         files_content = {
