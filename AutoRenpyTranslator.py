@@ -297,15 +297,15 @@ screen my_preferences():
             vbox:
                 label _("Language")
                 textbutton "Default" action Language(None)
-                 $  cnt = 0
+                $ cnt = 0
                 for i in l:
                     if i is not None and i != 'None':
                         textbutton "%s" % i action Language(i)
-''',
+    ''',
 
             "set_default_language_at_startup.rpy": '''init 1000 python:
-    renpy.game.preferences.language = "french"
-'''
+        renpy.game.preferences.language = "french"
+    '''
         }
         for filename, content in files_content.items():
             filepath = os.path.join(game_path, filename)
