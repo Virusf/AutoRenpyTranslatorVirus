@@ -128,7 +128,7 @@ class RenpyAutoTranslator:
             result = self.google_translator.translate(text, dest=target_lang)
             return result.text
         except Exception as e:
-            print(f"❌ Erreur Google Translate : {e}")
+            print(f"❌ Erreur Google Translate : {e}")
             return text
 
     def _translate_libretranslate(self, text, target_lang):
@@ -143,32 +143,43 @@ class RenpyAutoTranslator:
             response = requests.post(f"{self.libretranslate_url}/translate", headers=headers, json=data)
             return response.json()["translatedText"]
         except Exception as e:
-            print(f"❌ Erreur LibreTranslate : {e}")
+            print(f"❌ Erreur LibreTranslate : {e}")
             return text
 
     def preserve_renpy_tags(self, text: str):
-        # Capture {BALISE} et \n (retour ligne explicite)
-        pattern = re.compile(r'(\{.*?\}|\\n)')
+        """Préserve les balises Ren'Py et retours à la ligne avec numérotation séquentielle"""
+        # Pattern plus complet pour capturer toutes les balises Ren'Py
+        pattern = re.compile(r'(\{[^}]*\}|\\n|\\t|\\r|\[[^\]]*\])')
         tags = []
-        def replacer(m):
-            tag = m.group(0)
+        
+        def replacer(match):
+            tag = match.group(0)
             tags.append(tag)
-            return f'|||TAG_{len(tags)-1}|||'
+            return f'RENPYTAG{len(tags)-1}END'
+        
         replaced = pattern.sub(replacer, text)
         return replaced, tags
 
-    def restore_renpy_tags(self, translated: str, original: str):
-        # Cherche tous les tokens TAG
-        pattern_tag = re.compile(r'\|\|\|TAG_(\d+)\|\|\|')
-        _, tags = self.preserve_renpy_tags(original)
-        def restore(m):
-            idx = int(m.group(1))
-            if idx < len(tags):
-                return tags[idx]
-            return ''
-        return pattern_tag.sub(restore, translated)
+    def restore_renpy_tags(self, translated: str, original_tags: List[str]):
+        """Restaure les balises Ren'Py avec gestion robuste des erreurs"""
+        # Pattern pour retrouver les marqueurs
+        pattern_tag = re.compile(r'RENPYTAG(\d+)END')
+        
+        def restore(match):
+            try:
+                idx = int(match.group(1))
+                if 0 <= idx < len(original_tags):
+                    return original_tags[idx]
+                else:
+                    print(f"⚠ Index de balise invalide: {idx} (max: {len(original_tags)-1})")
+                    return match.group(0)  # Retourne le marqueur original si problème
+            except ValueError:
+                print(f"⚠ Erreur de parsing d'index: {match.group(1)}")
+                return match.group(0)
+        
+        restored = pattern_tag.sub(restore, translated)
+        return restored
 
-    # --------------------- Correction des guillemets/apostrophes ---------------------------
     def fix_quotes_universal(self, lines):
         """
         Convertit automatiquement les dialogues 'problématiques' en format compatible Ren'Py :
@@ -198,10 +209,10 @@ class RenpyAutoTranslator:
                 fixed.append(line)
         return fixed
 
-    # ---------------------- Traduction de Fichier ------------------------
     def translate_file(self, input_file: str, target_lang: str = 'fr'):
         with open(input_file, 'r', encoding='utf-8') as f:
             lines = f.readlines()
+        
         translated_lines = []
         translated_count = 0
         error_count = 0
@@ -219,41 +230,57 @@ class RenpyAutoTranslator:
                 translated_lines.append(line)
                 continue
 
+            # Trouve tous les textes entre guillemets
             matches = list(re.finditer(r'"((?:[^"\\]|\\.)*)"', line))
             if matches:
                 new_line = line
                 for match in matches:
-                    original = match.group(1)
-                    clean_text, _ = self.preserve_renpy_tags(original)
-                    # Si le texte ne contient que des tags, ne pas traduire
-                    clean_without_tags = re.sub(r'\|\|\|TAG_\d+\|\|\|', '', clean_text).strip()
-                    if not clean_without_tags:
-                        translated_text = original
+                    original_text = match.group(1)
+                    
+                    # Préserve les balises Ren'Py
+                    clean_text, preserved_tags = self.preserve_renpy_tags(original_text)
+                    
+                    # Vérifie si il y a du texte à traduire après suppression des balises
+                    text_to_check = re.sub(r'RENPYTAG\d+END', '', clean_text).strip()
+                    
+                    if not text_to_check:
+                        # Pas de texte à traduire, on garde l'original
+                        translated_text = original_text
                     else:
                         try:
+                            # Traduit le texte nettoyé
                             translated_clean = self.translate_text(clean_text, target_lang)
-                            translated_text = self.restore_renpy_tags(translated_clean, original)
+                            
+                            # Restaure les balises
+                            translated_text = self.restore_renpy_tags(translated_clean, preserved_tags)
+                            
+                            # Échappe les guillemets internes pour Ren'Py
                             translated_text = translated_text.replace('"', '\\"')
+                            
                             translated_count += 1
-                            time.sleep(0.1)
+                            time.sleep(0.1)  # Évite les limites de taux
+                            
                         except Exception as e:
-                            print(f"❌ Erreur à la ligne {i}: {e}")
-                            translated_text = original
+                            print(f"❌ Erreur ligne {i+1}: {e}")
+                            translated_text = original_text
                             error_count += 1
-                    new_line = new_line.replace(f'"{original}"', f'"{translated_text}"', 1)
+                    
+                    # Remplace dans la ligne
+                    new_line = new_line.replace(f'"{original_text}"', f'"{translated_text}"', 1)
+                
                 translated_lines.append(new_line)
             else:
                 translated_lines.append(line)
 
-        # >> Correction robuste des quotes/apostrophes avant écriture <<
+        # Correction des guillemets/apostrophes
         translated_lines = self.fix_quotes_universal(translated_lines)
 
+        # Écrit le fichier traduit
         with open(input_file, 'w', encoding='utf-8') as f:
             f.writelines(translated_lines)
 
         print(f"\n✓ {translated_count} lignes traduites – ⚠ {error_count} erreurs dans {input_file}")
         return translated_count, error_count
-
 
     def generate_language_files(self, game_path: str):
         files_content = {
@@ -340,17 +367,22 @@ screen my_preferences():
         if not game_path:
             print("❌ Dossier 'game' introuvable! Assurez-vous d'être dans le répertoire du projet Ren'Py")
             return
+        
         print(f"🎮 Projet Ren'Py détecté: {game_path}")
         translation_path = self.get_translation_path(game_path, language)
+        
         if not os.path.exists(translation_path):
             print(f"❌ Dossier de traductions introuvable: {translation_path}")
             print("Assurez-vous que les fichiers de traduction existent dans ce dossier")
             return
+        
         backup_path = self.create_backup(translation_path)
         rpy_files = self.find_rpy_files(translation_path)
+        
         if not rpy_files:
             print(f"❌ Aucun fichier .rpy trouvé dans {translation_path}")
             return
+        
         print(f"📁 {len(rpy_files)} fichiers .rpy trouvés, lancement de la traduction...")
         total_translated = 0
         total_errors = 0
@@ -367,6 +399,7 @@ screen my_preferences():
 def main():
     print("🎮 Auto-traducteur Ren'Py - Version Stable")
     print("=" * 50)
+    
     parser = argparse.ArgumentParser(description='Auto-traducteur automatique pour projets Ren\'Py')
     parser.add_argument('-p', '--path', help='Chemin vers le dossier game (détection automatique par défaut)')
     parser.add_argument('-l', '--lang', default='fr', help='Langue cible (par défaut: fr)')
@@ -376,11 +409,14 @@ def main():
     parser.add_argument('--libretranslate-url', default='http://localhost:5000',
                        help='URL LibreTranslate (par défaut: http://localhost:5000)')
     parser.add_argument('-f', '--file', help='Traduire un fichier spécifique au lieu du projet complet')
+    
     args = parser.parse_args()
+    
     translator = RenpyAutoTranslator(
         service=args.service,
         libretranslate_url=args.libretranslate_url
     )
+    
     # Mode fichier unique
     if args.file:
         if os.path.exists(args.file):
@@ -390,6 +426,7 @@ def main():
         else:
             print(f"❌ Fichier introuvable: {args.file}")
         return
+    
     # Mode projet complet
     translator.translate_project(
         game_path=args.path,
