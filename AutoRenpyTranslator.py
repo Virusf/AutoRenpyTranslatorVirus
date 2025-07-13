@@ -332,21 +332,23 @@ class RenpyAutoTranslator:
 
 
     def fix_quotes_universal(self, lines):
-        import re
         fixed = []
-        pattern = re.compile(r'^(\s*\w*\s*)(")(.*)(")\s*$')
+        # Cette regex détecte le dialogue type Ren'Py : un identifiant, basiquement facultatif, puis "texte"
+        pattern = re.compile(r'^(\s*\w*\s*)"(.*)"(\s*)$')
         for line in lines:
-            match = pattern.match(line)
+            match = pattern.match(line.rstrip('\n'))
             if match:
-                prefix, openq, content, closeq = match.groups()
-                # Remplace les simples quotes internes proprement
-                safe_content = content.replace("'", "\\'")
-                if content.startswith('"') or content.endswith('"') or re.search(r'(?<!\\)"', content):
-                    if not (content.startswith("'") and content.endswith("'")):
-                        fixed_line = f"{prefix}'{safe_content}'\n"
-                        fixed.append(fixed_line)
-                    else:
-                        fixed.append(line)
+                prefix, content, suffix = match.groups()
+                # Seulement si le contenu a des guillemets doubles échappés (\"), ou contient une apostrophe non échappée
+                if '\\"' in content or (("'" in content) and not content.startswith("'") and not content.endswith("'")):
+                    # Transforme les apostrophes non échappées en \', sauf dans les balises {w}, etc.
+                    def escape_apostrophes(s):
+                        # On échappe uniquement les apostrophes NON précédées d'un backslash
+                        return re.sub(r"(?<!\\)'", r"\\'", s)
+                    safe_content = escape_apostrophes(content.replace('\\"', '"'))
+                    # Entourer avec des guillemets simples
+                    fixed_line = f"{prefix}'{safe_content}'{suffix}\n"
+                    fixed.append(fixed_line)
                 else:
                     fixed.append(line)
             else:
