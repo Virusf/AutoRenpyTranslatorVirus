@@ -155,15 +155,19 @@ class RenpyAutoTranslator:
         def replacer(match):
             tag = match.group(0)
             tags.append(tag)
-            return f'RENPYTAG{len(tags)-1}END'
+            # Utilise des marqueurs uniques avec espaces pour éviter les collisions
+            return f' RENPYTAG{len(tags)-1}END '
         
         replaced = pattern.sub(replacer, text)
         return replaced, tags
 
     def restore_renpy_tags(self, translated: str, original_tags: List[str]):
         """Restaure les balises Ren'Py avec gestion robuste des erreurs"""
-        # Pattern pour retrouver les marqueurs
-        pattern_tag = re.compile(r'RENPYTAG(\d+)END')
+        if not original_tags:
+            return translated
+            
+        # Pattern pour retrouver les marqueurs avec espaces optionnels
+        pattern_tag = re.compile(r'\s*RENPYTAG(\d+)END\s*')
         
         def restore(match):
             try:
@@ -172,12 +176,17 @@ class RenpyAutoTranslator:
                     return original_tags[idx]
                 else:
                     print(f"⚠ Index de balise invalide: {idx} (max: {len(original_tags)-1})")
-                    return match.group(0)  # Retourne le marqueur original si problème
+                    return ''  # Supprime le marqueur invalide
             except ValueError:
                 print(f"⚠ Erreur de parsing d'index: {match.group(1)}")
-                return match.group(0)
+                return ''
         
         restored = pattern_tag.sub(restore, translated)
+        
+        # Nettoyage final : supprime les marqueurs orphelins
+        orphan_pattern = re.compile(r'\s*RENPYTAG\d+END\s*')
+        restored = orphan_pattern.sub('', restored)
+        
         return restored
 
     def fix_quotes_universal(self, lines):
@@ -241,7 +250,7 @@ class RenpyAutoTranslator:
                     clean_text, preserved_tags = self.preserve_renpy_tags(original_text)
                     
                     # Vérifie si il y a du texte à traduire après suppression des balises
-                    text_to_check = re.sub(r'RENPYTAG\d+END', '', clean_text).strip()
+                    text_to_check = re.sub(r'\s*RENPYTAG\d+END\s*', '', clean_text).strip()
                     
                     if not text_to_check:
                         # Pas de texte à traduire, on garde l'original
@@ -253,6 +262,9 @@ class RenpyAutoTranslator:
                             
                             # Restaure les balises
                             translated_text = self.restore_renpy_tags(translated_clean, preserved_tags)
+                            
+                            # Nettoyage final des espaces multiples
+                            translated_text = re.sub(r'\s+', ' ', translated_text).strip()
                             
                             # Échappe les guillemets internes pour Ren'Py
                             translated_text = translated_text.replace('"', '\\"')
