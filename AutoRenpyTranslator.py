@@ -116,199 +116,127 @@ class RenpyAutoTranslator:
                 return os.path.join(root, "game")
         
         return None
-    
 
-    def get_translation_path(self, game_path: str, language: str = "french") -> str:
+    def get_translation_path(self, game_path: str, language: str) -> str:
         """Obtient le chemin du dossier de traductions"""
-        return os.path.join(game_path, "tl", language)
-    
+        return os.path.join(game_path, 'tl', language)
+
     def find_rpy_files(self, path: str) -> List[str]:
-        """Trouve tous les fichiers .rpy dans un dossier et ses sous-dossiers"""
+        """Trouve tous les fichiers .rpy dans un dossier"""
         rpy_files = []
-        if os.path.exists(path):
-            for root, dirs, files in os.walk(path):
-                for file in files:
-                    if file.endswith('.rpy'):
-                        rpy_files.append(os.path.join(root, file))
+        for root, dirs, files in os.walk(path):
+            for file in files:
+                if file.endswith('.rpy'):
+                    rpy_files.append(os.path.join(root, file))
         return rpy_files
-    
-    def translate_text(self, text: str, target_lang: str = 'fr', source_lang: str = 'en') -> str:
-        """Traduit un texte selon le service choisi"""
-        if not text.strip():
+
+    def translate_text(self, text: str, target_lang: str) -> str:
+        """Traduit un texte avec le service sélectionné"""
+        if not text or not text.strip():
             return text
             
-        try:
-            if self.service == 'google':
-                return self._translate_google(text, target_lang, source_lang)
-            elif self.service == 'libretranslate':
-                return self._translate_libretranslate(text, target_lang, source_lang)
-        except Exception as e:
-            print(f"❌ Erreur de traduction: {e}")
-            return text
-    
-    def _translate_google(self, text: str, target_lang: str, source_lang: str) -> str:
-        """Traduction avec Google Translate (gratuit)"""
+        if self.service == 'google':
+            return self._translate_google(text, target_lang)
+        elif self.service == 'libretranslate':
+            return self._translate_libretranslate(text, target_lang)
+        else:
+            raise ValueError(f"Service de traduction non supporté: {self.service}")
+
+    def _translate_google(self, text: str, target_lang: str) -> str:
+        """Traduit avec Google Translate"""
         if not self.google_translator:
             raise Exception("Google Translator non initialisé")
             
-        # Gestion de la limite de caractères
+        # Diviser le texte si trop long
         if len(text) > self.google_char_limit:
-            chunks = self._split_text(text, self.google_char_limit)
-            translated_chunks = []
+            return self._translate_long_text(text, target_lang)
             
-            for chunk in chunks:
-                if chunk.strip():
-                    try:
-                        result = self.google_translator.translate(chunk, dest=target_lang, src=source_lang)
-                        translated_chunks.append(result.text)
-                        time.sleep(0.1)
-                    except Exception as e:
-                        print(f"❌ Erreur chunk: {e}")
-                        translated_chunks.append(chunk)
-                else:
-                    translated_chunks.append(chunk)
-            
-            return ''.join(translated_chunks)
-        else:
-            result = self.google_translator.translate(text, dest=target_lang, src=source_lang)
-            return result.text
-    
-    def _translate_libretranslate(self, text: str, target_lang: str, source_lang: str) -> str:
-        """Traduction avec LibreTranslate local"""
-        data = {
-            'q': text,
-            'source': source_lang,
-            'target': target_lang,
-            'format': 'text'
-        }
-        
         try:
-            response = requests.post(f"{self.libretranslate_url}/translate", data=data, timeout=10)
+            result = self.google_translator.translate(text, dest=target_lang)
+            return result.text
+        except Exception as e:
+            print(f"Erreur Google Translate: {e}")
+            return text
+
+    def _translate_libretranslate(self, text: str, target_lang: str) -> str:
+        """Traduit avec LibreTranslate"""
+        try:
+            response = requests.post(
+                f"{self.libretranslate_url}/translate",
+                json={
+                    "q": text,
+                    "source": "auto",
+                    "target": target_lang,
+                    "format": "text"
+                },
+                timeout=30
+            )
             if response.status_code == 200:
                 return response.json()['translatedText']
             else:
-                raise Exception(f"Erreur LibreTranslate: {response.status_code}")
-        except requests.exceptions.ConnectionError:
-            raise Exception("Impossible de se connecter à LibreTranslate. Vérifiez qu'il est lancé.")
-    
-    def _split_text(self, text: str, max_length: int) -> List[str]:
-        """Divise le texte en chunks respectant la limite de caractères"""
-        if len(text) <= max_length:
-            return [text]
+                print(f"Erreur LibreTranslate: {response.status_code}")
+                return text
+        except Exception as e:
+            print(f"Erreur LibreTranslate: {e}")
+            return text
+
+    def _translate_long_text(self, text: str, target_lang: str) -> str:
+        """Traduit les textes longs en préservant la structure des paragraphes"""
+        # Diviser par paragraphes doubles
+        paragraphs = text.split('\n\n')
+        translated_paragraphs = []
         
-        chunks = []
-        current_chunk = ""
-        
-        sentences = re.split(r'([.!?]\s+)', text)
-        
-        for sentence in sentences:
-            if len(current_chunk + sentence) <= max_length:
-                current_chunk += sentence
+        for paragraph in paragraphs:
+            if paragraph.strip():
+                try:
+                    translated_para = self.translate_text(paragraph.strip(), target_lang)
+                    translated_paragraphs.append(translated_para)
+                    time.sleep(0.1)  # Pause entre paragraphes
+                except Exception as e:
+                    print(f"❌ Erreur traduction paragraphe: {e}")
+                    translated_paragraphs.append(paragraph)
             else:
-                if current_chunk:
-                    chunks.append(current_chunk)
-                    current_chunk = sentence
-                else:
-                    words = sentence.split()
-                    word_chunk = ""
-                    for word in words:
-                        if len(word_chunk + " " + word) <= max_length:
-                            word_chunk += " " + word if word_chunk else word
-                        else:
-                            if word_chunk:
-                                chunks.append(word_chunk)
-                            word_chunk = word
-                    if word_chunk:
-                        current_chunk = word_chunk
+                translated_paragraphs.append(paragraph)
         
-        if current_chunk:
-            chunks.append(current_chunk)
+        return '\n\n'.join(translated_paragraphs)
+
+    def preserve_renpy_tags(self, text: str) -> Tuple[str, List]:
+        """Préserve les balises Ren'Py et retourne le texte nettoyé + segments"""
+        if not text:
+            return text, []
         
-        return chunks
-    
-    def extract_translatable_text(self, line: str) -> Optional[str]:
-        """Extrait le texte à traduire d'une ligne Ren'Py"""
-        # Ligne de dialogue avec caractère
-        match = re.search(r'^\s*(\w+)\s+"((?:[^"\\]|\\.)*)"', line)
-        if match:
-            return match.group(2)
-        
-        # Ligne de narration
-        match = re.search(r'^\s*"((?:[^"\\]|\\.)*)"', line)
-        if match:
-            return match.group(1)
-        
-        # Ligne new dans strings
-        match = re.search(r'^\s*new\s+"([^"]*)"', line)
-        if match:
-            return match.group(1)
-        
-        return None
-    
-    def preserve_renpy_tags(self, text: str) -> Tuple[str, List[Tuple[str, str, str]]]:
-        """Extrait les balises Ren'Py et retourne le texte nettoyé avec les segments"""
-        # Diviser le texte en segments : [texte_avant, balise, texte_après, balise, ...]
-        tag_pattern = r'(\{[^}]*\})'
-        parts = re.split(tag_pattern, text)
-        
-        clean_text = ""
         segments = []
+        clean_text = ""
+        last_end = 0
         
-        for i, part in enumerate(parts):
-            if i % 2 == 0:  # Texte normal
+        # Pattern pour les balises Ren'Py {tag}, [tag], \\n, etc.
+        pattern = r'(\{[^}]*\}|\[[^\]]*\]|\\n|\\t)'
+        
+        for match in re.finditer(pattern, text):
+            start, end = match.span()
+            tag = match.group(1)
+            
+            # Ajouter le texte avant la balise
+            if start > last_end:
+                part = text[last_end:start]
                 clean_text += part
                 segments.append(('text', part, part))
-            else:  # Balise
-                segments.append(('tag', part, ''))
+            
+            # Ajouter la balise
+            if tag == '\\n':
+                segments.append(('newline', tag, tag))
+            else:
+                segments.append(('tag', tag, tag))
+            
+            last_end = end
+        
+        # Ajouter le reste du texte après la dernière balise
+        if last_end < len(text):
+            part = text[last_end:]
+            clean_text += part
+            segments.append(('text', part, part))
         
         return clean_text, segments
-
-    @staticmethod
-    def protect_renpy_variables(text):
-        """Remplace les balises et variables Ren'Py par des jetons temporaires"""
-        tokens = []
-        def replacer(match):
-            tokens.append(match.group(0))
-            return f"__TOKEN_{len(tokens)-1}__"
-
-        # Match des balises {b}, {/b}, [var], etc.
-        protected_text = re.sub(r'(\{[^}]+\}|\[[^\]]+\])', replacer, text)
-        return protected_text, tokens
-
-    @staticmethod
-    def restore_renpy_variables(text, tokens):
-        for i, token in enumerate(tokens):
-            text = text.replace(f"__TOKEN_{i}__", token)
-        return text
-
-
-    def fix_w_position(self, translated_text: str, original_text: str) -> str:
-        # Vérifier si {w} est présent dans le texte original
-        # supprimer pour cause de bug
-
-        # # Cas 1 : déplacer ponctuation avant {w} (ex : "Bonjour{w} !" → "Bonjour!{w}")
-        # pattern1 = re.compile(r'\{w\}(\s*)([,.!?:;])')
-        
-        # def replacer1(m):
-        #     espaces = m.group(1)
-        #     ponctuation = m.group(2)
-        #     return ponctuation + '{w}' + espaces
-
-        # text = pattern1.sub(replacer1, translated_text)
-
-        # # Cas 2 : déplacer {w} après la ponctuation si {w} est collé au mot et ponctuation suit (ex : "jour{w}," → "jour,{w}")
-        # pattern2 = re.compile(r'(\w)\{w\}([,.!?:;])')
-        
-        # def replacer2(m):
-        #     lettre = m.group(1)
-        #     ponctuation = m.group(2)
-        #     return lettre + ponctuation + '{w}'
-
-        # text = pattern2.sub(replacer2, text)
-
-        # return text
-        return re.sub(r'\{w\}', '', translated_text)
-
 
     def restore_renpy_tags(self, translated_text: str, original_text: str) -> str:
         """Restaure les balises Ren'Py dans le texte traduit en respectant la structure"""
@@ -317,6 +245,42 @@ class RenpyAutoTranslator:
         if not original_segments:
             return translated_text
 
+        # Cas spécial pour les longs textes : si le texte original contient \n\n, 
+        # on divise par paragraphes
+        if '\\n\\n' in original_text:
+            return self._restore_with_paragraphs(translated_text, original_text, original_segments)
+
+        # Méthode standard pour textes courts
+        # On appelle _restore_standard et on lui donne 'original_text' comme 3ème argument
+        return self._restore_standard(translated_text, original_segments, original_text)
+
+    def _restore_with_paragraphs(self, translated_text: str, original_text: str, original_segments: List) -> str:
+        """Restaure les balises pour les textes longs avec paragraphes"""
+        # Diviser le texte original en paragraphes
+        original_paragraphs = original_text.split('\\n\\n')
+        translated_paragraphs = translated_text.split('\n\n')
+        
+        # Si le nombre de paragraphes ne correspond pas, utiliser la méthode standard
+        if len(original_paragraphs) != len(translated_paragraphs):
+            return self._restore_standard(translated_text, original_segments, original_text)  # ✅ Ajout du 3ème paramètre
+        
+        # Restaurer chaque paragraphe individuellement
+        restored_paragraphs = []
+        for orig_para, trans_para in zip(original_paragraphs, translated_paragraphs):
+            # Nettoyer les balises du paragraphe original
+            clean_orig, para_segments = self.preserve_renpy_tags(orig_para)
+            
+            if clean_orig.strip():
+                # ✅ Correction : ajouter le 3ème paramètre 'orig_para'
+                restored_para = self._restore_standard(trans_para, para_segments, orig_para)
+                restored_paragraphs.append(restored_para)
+            else:
+                restored_paragraphs.append(trans_para)
+        
+        return '\\n\\n'.join(restored_paragraphs)
+
+    def _restore_standard(self, translated_text: str, original_segments: List, original_full_text: str) -> str:
+        """Méthode standard de restauration des balises"""
         # Extraire seulement les parties texte de l'original
         original_text_parts = [seg[1] for seg in original_segments if seg[0] == 'text']
         original_clean = ''.join(original_text_parts)
@@ -331,6 +295,8 @@ class RenpyAutoTranslator:
         for segment_type, content, _ in original_segments:
             if segment_type == 'tag':
                 result_parts.append(content)
+            elif segment_type == 'newline':
+                result_parts.append('\\n')
             else:  # segment_type == 'text'
                 if not content:
                     result_parts.append('')
@@ -349,18 +315,6 @@ class RenpyAutoTranslator:
                     while end_pos < len(translated_text) and translated_text[end_pos] not in ' \t\n.,!?;:':
                         end_pos += 1
 
-                    # Étendre end_pos pour inclure {w} + ponctuation si présents juste après
-                    while True:
-                        if end_pos + 3 <= len(translated_text) and translated_text[end_pos:end_pos+3] == '{w}':
-                            # vérifier s'il y a une ponctuation juste après {w}
-                            if end_pos + 4 < len(translated_text) and translated_text[end_pos + 3] in '.,!?;:':
-                                end_pos += 4  # inclure {w} + ponctuation
-                                continue
-                            else:
-                                end_pos += 3  # inclure seulement {w}
-                                continue
-                        break
-
                     segment_text = translated_text[translated_pos:end_pos]
                     translated_pos = end_pos
 
@@ -369,13 +323,135 @@ class RenpyAutoTranslator:
                     result_parts.append('')
 
         final_text = ''.join(result_parts)
-        return self.fix_w_position(final_text, original_text)
+        return self.fix_w_position(final_text, original_full_text)
+
+    def fix_w_position(self, translated_text: str, original_text: str) -> str:
+        """Corrige la position des balises {w} dans le texte traduit"""
+        # Supprimer les balises {w} pour éviter les bugs
+        return re.sub(r'\{w\}', '', translated_text)
+
+    def translate_file(self, input_file: str, target_lang: str = 'fr') -> Tuple[int, int]:
+        """Traduit un fichier Ren'Py et retourne (lignes_traduites, erreurs)"""
+        if not os.path.exists(input_file):
+            print(f"❌ Fichier introuvable: {input_file}")
+            return 0, 1
+
+        with open(input_file, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+
+        translated_lines = []
+        translated_count = 0
+        error_count = 0
+
+        from tqdm import tqdm
+
+        for i, line in enumerate(tqdm(lines,
+                                desc=os.path.basename(input_file),
+                                unit='ligne',
+                                ncols=80), 1):
+
+            stripped = line.strip()
+
+            # Cas à ignorer
+            if (
+                stripped.startswith('#') or
+                not stripped or
+                ('translate french' in line and stripped.endswith(':')) or
+                'TODO' in line or
+                re.match(r'^\s*old\s+"', line)
+            ):
+                translated_lines.append(line)
+                continue
+
+            # Cas spécial new: "new:123.456_0" → ne pas traduire
+            if re.match(r'^\s*new\s+"((new|old):\d+(\.\d+)?_\d+)"', line):
+                translated_lines.append(line)
+                continue
+
+            # Cas: new "Texte"
+            if re.match(r'^\s*new\s+"', line):
+                match = re.search(r'^\s*new\s+"((?:[^"\\]|\\.)*)"', line)
+                if match:
+                    original = match.group(1)
+
+                    # --- Début de la zone à modifier ---
+                    # Capturer le préfixe (indentation et 'new "') et le suffixe ('"\n' ou autre)
+                    prefix = line[:match.start(1)-1] # Capture jusqu'au guillemet ouvrant
+                    suffix = line[match.end(1)+1:]   # Capture à partir du guillemet fermant + 1
+
+                    # Éviter de traduire les textes vides ou très courts
+                    if len(original.strip()) < 3:
+                        translated_lines.append(line)
+                        continue
+
+                    try:
+                        clean_text, _ = self.preserve_renpy_tags(original)
+
+                        # Pour les très longs textes, diviser en sections
+                        if len(clean_text) > 1000:
+                            translated_clean = self._translate_long_text(clean_text, target_lang)
+                        else:
+                            translated_clean = self.translate_text(clean_text, target_lang)
+
+                        translated_text = self.restore_renpy_tags(translated_clean, original)
+
+                        # Échapper les guillemets standard et potentiellement d'autres caractères problématiques
+                        # Si tu identifies d'autres caractères (comme “ ou ”) qui cassent,
+                        # tu peux ajouter d'autres .replace() ici.
+                        escaped_translated_text = translated_text.replace('"', '\\"')
+                        # Exemple si les guillemets typographiques cassent :
+                        # escaped_translated_text = escaped_translated_text.replace('“', '\\"').replace('”', '\\"')
 
 
+                        # Reconstruire la ligne manuellement
+                        translated_line = f'{prefix}"{escaped_translated_text}"{suffix}'
+
+                        # --- Fin de la zone à modifier ---
+
+                        translated_lines.append(translated_line)
+                        translated_count += 1
+                        time.sleep(0.1) # Garder une petite pause entre les requêtes
+
+                    except Exception as e:
+                        print(f"❌ Erreur à la ligne {i}: {e}")
+                        translated_lines.append(line) # Ajouter la ligne originale en cas d'erreur
+                        error_count += 1
+                else:
+                    # Si le regex initial matche "new " mais qu'il n'y a pas de texte entre guillemets (rare)
+                    translated_lines.append(line)
+                continue
+
+
+            # Cas général : traduire tous les "..." trouvés sur la ligne (ex : "Author" "Text")
+            matches = list(re.finditer(r'"((?:[^"\\]|\\.)*)"', line))
+            if matches:
+                new_line = line
+                for match in matches:
+                    original = match.group(1)
+                    try:
+                        clean_text, _ = self.preserve_renpy_tags(original)
+                        translated_clean = self.translate_text(clean_text, target_lang)
+                        translated_text = self.restore_renpy_tags(translated_clean, original)
+                        translated_text = translated_text.replace('"', '\\"')
+                        # Remplacer un seul groupe à la fois
+                        new_line = new_line.replace(f'"{original}"', f'"{translated_text}"', 1)
+                        translated_count += 1
+                        time.sleep(0.1)
+                    except Exception as e:
+                        print(f"❌ Erreur à la ligne {i}: {e}")
+                        error_count += 1
+                translated_lines.append(new_line)
+            else:
+                translated_lines.append(line)
+
+        with open(input_file, 'w', encoding='utf-8') as f:
+            f.writelines(translated_lines)
+
+        print(f"✓ {translated_count} lignes traduites – ⚠ {error_count} erreurs")
+        return translated_count, error_count
 
     def generate_language_files(self, game_path: str):
         """Génère les fichiers de configuration de langue dans le dossier game/"""
-
         files_content = {
             "change_language_entrance.rpy": '''init python early hide:
     import os
@@ -442,11 +518,11 @@ screen my_preferences():
                 for i in l:
                     if i is not None and i != 'None':
                         textbutton "%s" % i action Language(i)
-    ''',
+''',
 
             "set_default_language_at_startup.rpy": '''init 1000 python:
-        renpy.game.preferences.language = "french"
-    '''
+    renpy.game.preferences.language = "french"
+'''
         }
 
         for filename, content in files_content.items():
@@ -454,98 +530,6 @@ screen my_preferences():
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write(content)
             print(f"✓ Fichier généré : {filepath}")
-
-
-    
-    def translate_file(self, input_file: str, target_lang: str = 'fr') -> Tuple[int, int]:
-        """Traduit un fichier Ren'Py et retourne (lignes_traduites, erreurs)"""
-        if not os.path.exists(input_file):
-            print(f"❌ Fichier introuvable: {input_file}")
-            return 0, 1
-
-        with open(input_file, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-
-        translated_lines = []
-        translated_count = 0
-        error_count = 0
-
-        from tqdm import tqdm
-
-        for i, line in enumerate(tqdm(lines,
-                                desc=os.path.basename(input_file),
-                                unit='ligne',
-                                ncols=80), 1):
-
-            stripped = line.strip()
-
-            # Cas à ignorer
-            if (
-                stripped.startswith('#') or
-                not stripped or
-                ('translate french' in line and stripped.endswith(':')) or
-                'TODO' in line or
-                re.match(r'^\s*old\s+"', line)
-            ):
-                translated_lines.append(line)
-                continue
-
-            # Cas spécial new: "new:123.456_0" → ne pas traduire
-            if re.match(r'^\s*new\s+"((new|old):\d+(\.\d+)?_\d+)"', line):
-                translated_lines.append(line)
-                continue
-
-            # Cas: new "Texte"
-            if re.match(r'^\s*new\s+"', line):
-                match = re.search(r'^\s*new\s+"((?:[^"\\]|\\.)*)"', line)
-                if match:
-                    original = match.group(1)
-                    try:
-                        clean_text, _ = self.preserve_renpy_tags(original)
-                        translated_clean = self.translate_text(clean_text, target_lang)
-                        translated_text = self.restore_renpy_tags(translated_clean, original)
-                        translated_text = translated_text.replace('"', '\\"')
-                        translated_line = re.sub(r'(^\s*new\s+)"((?:[^"\\]|\\.)*)"', rf'\1"{translated_text}"', line)
-                        translated_lines.append(translated_line)
-                        translated_count += 1
-                        time.sleep(0.1)
-                    except Exception as e:
-                        print(f"❌ Erreur à la ligne {i}: {e}")
-                        translated_lines.append(line)
-                        error_count += 1
-                else:
-                    translated_lines.append(line)
-                continue
-
-            # Cas général : traduire tous les "..." trouvés sur la ligne (ex : "Author" "Text")
-            matches = list(re.finditer(r'"((?:[^"\\]|\\.)*)"', line))
-            if matches:
-                new_line = line
-                for match in matches:
-                    original = match.group(1)
-                    try:
-                        clean_text, _ = self.preserve_renpy_tags(original)
-                        translated_clean = self.translate_text(clean_text, target_lang)
-                        translated_text = self.restore_renpy_tags(translated_clean, original)
-                        translated_text = translated_text.replace('"', '\\"')
-                        # Remplacer un seul groupe à la fois
-                        new_line = new_line.replace(f'"{original}"', f'"{translated_text}"', 1)
-                        translated_count += 1
-                        time.sleep(0.1)
-                    except Exception as e:
-                        print(f"❌ Erreur à la ligne {i}: {e}")
-                        error_count += 1
-                translated_lines.append(new_line)
-            else:
-                translated_lines.append(line)
-
-        with open(input_file, 'w', encoding='utf-8') as f:
-            f.writelines(translated_lines)
-
-        print(f"✓ {translated_count} lignes traduites – ⚠ {error_count} erreurs")
-        return translated_count, error_count
-
-
     
     def translate_project(self, game_path: str = None, language: str = "french", target_lang: str = 'fr'):
         """Traduit automatiquement tous les fichiers de traduction d'un projet Ren'Py"""
