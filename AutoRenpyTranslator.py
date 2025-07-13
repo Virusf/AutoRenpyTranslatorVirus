@@ -147,17 +147,26 @@ class RenpyAutoTranslator:
             return text
 
     def preserve_renpy_tags(self, text: str):
-        pattern = re.compile(r'(\{.*?\})')
-        tags = pattern.findall(text)
-        replaced = pattern.sub("{{TAG}}", text)
+        # Capture {BALISE} et \n (retour ligne explicite)
+        pattern = re.compile(r'(\{.*?\}|\\n)')
+        tags = []
+        def replacer(m):
+            tag = m.group(0)
+            tags.append(tag)
+            return f'|||TAG_{len(tags)-1}|||'
+        replaced = pattern.sub(replacer, text)
         return replaced, tags
 
     def restore_renpy_tags(self, translated: str, original: str):
-        pattern = re.compile(r'(\{.*?\})')
-        tags = pattern.findall(original)
-        for tag in tags:
-            translated = translated.replace("{{TAG}}", tag, 1)
-        return translated
+        # Cherche tous les tokens TAG
+        pattern_tag = re.compile(r'\|\|\|TAG_(\d+)\|\|\|')
+        _, tags = self.preserve_renpy_tags(original)
+        def restore(m):
+            idx = int(m.group(1))
+            if idx < len(tags):
+                return tags[idx]
+            return ''
+        return pattern_tag.sub(restore, translated)
 
     # --------------------- Correction des guillemets/apostrophes ---------------------------
     def fix_quotes_universal(self, lines):
@@ -197,29 +206,41 @@ class RenpyAutoTranslator:
         translated_count = 0
         error_count = 0
 
-        # Affiche la barre de progression sur le fichier entier
+        ignore_patterns = [
+            r'^\s*#',                       # Commentaires
+            r'^\s*$',                       # Lignes vides
+            r'^\s*old\s+"',                 # Ligne old
+            r'^\s*new\s+"old:.*"',          # new "old:xxxx"
+            r'^\s*new\s*".*_\d+(\.\d+)*_?\d*"',  # new "xxx_1234" etc
+        ]
+
         for i, line in enumerate(tqdm(lines, desc=f"Traduction – {os.path.basename(input_file)}", ncols=100)):
-            # Ignore les commentaires & lignes vides
-            if re.match(r'^\s*#', line) or re.match(r'^\s*$', line):
+            if any(re.match(p, line) for p in ignore_patterns):
                 translated_lines.append(line)
                 continue
-            # Recherche de dialogue à traduire
+
             matches = list(re.finditer(r'"((?:[^"\\]|\\.)*)"', line))
             if matches:
                 new_line = line
                 for match in matches:
                     original = match.group(1)
-                    try:
-                        clean_text, _ = self.preserve_renpy_tags(original)
-                        translated_clean = self.translate_text(clean_text, target_lang)
-                        translated_text = self.restore_renpy_tags(translated_clean, original)
-                        translated_text = translated_text.replace('"', '\\"')
-                        new_line = new_line.replace(f'"{original}"', f'"{translated_text}"', 1)
-                        translated_count += 1
-                        time.sleep(0.1)
-                    except Exception as e:
-                        print(f"❌ Erreur à la ligne {i}: {e}")
-                        error_count += 1
+                    clean_text, _ = self.preserve_renpy_tags(original)
+                    # Si le texte ne contient que des tags, ne pas traduire
+                    clean_without_tags = re.sub(r'\|\|\|TAG_\d+\|\|\|', '', clean_text).strip()
+                    if not clean_without_tags:
+                        translated_text = original
+                    else:
+                        try:
+                            translated_clean = self.translate_text(clean_text, target_lang)
+                            translated_text = self.restore_renpy_tags(translated_clean, original)
+                            translated_text = translated_text.replace('"', '\\"')
+                            translated_count += 1
+                            time.sleep(0.1)
+                        except Exception as e:
+                            print(f"❌ Erreur à la ligne {i}: {e}")
+                            translated_text = original
+                            error_count += 1
+                    new_line = new_line.replace(f'"{original}"', f'"{translated_text}"', 1)
                 translated_lines.append(new_line)
             else:
                 translated_lines.append(line)
