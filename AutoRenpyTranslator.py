@@ -10,6 +10,8 @@ from datetime import datetime
 from typing import List
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
+
 
 def install_and_import(package_name, pip_name=None):
     """Installe et importe un package si nécessaire"""
@@ -218,6 +220,17 @@ class RenpyAutoTranslator:
                 fixed.append(line)
         return fixed
 
+
+    def batch_translate_texts(texts, target_lang):
+        """Traduit un lot de textes en une seule fois."""
+        # Regroupez les textes en une seule string séparée par des délimiteurs
+        batch_text = "\n".join(texts)
+        translated_batch = self.translate_text(batch_text, target_lang)
+        # Splitez le résultat dans une liste
+        return translated_batch.split("\n")
+
+
+
     def translate_file(self, input_file: str, target_lang: str = 'fr'):
         with open(input_file, 'r', encoding='utf-8') as f:
             lines = f.readlines()
@@ -226,6 +239,10 @@ class RenpyAutoTranslator:
         translated_count = 0
         error_count = 0
 
+        # Préparer une liste pour les futures traductions
+        texts_to_translate = []
+
+
         ignore_patterns = [
             r'^\s*#',                       # Commentaires
             r'^\s*$',                       # Lignes vides
@@ -233,6 +250,7 @@ class RenpyAutoTranslator:
             r'^\s*new\s+"old:.*"',          # new "old:xxxx"
             r'^\s*new\s*".*_\d+(\.\d+)*_?\d*"',  # new "xxx_1234" etc
         ]
+
 
         for i, line in enumerate(tqdm(lines, desc=f"Traduction – {os.path.basename(input_file)}", ncols=100)):
             if any(re.match(p, line) for p in ignore_patterns):
@@ -284,8 +302,36 @@ class RenpyAutoTranslator:
             else:
                 translated_lines.append(line)
 
+
+
+        # Utilisez ThreadPoolExecutor pour traduire les textes en parallèle
+        with ThreadPoolExecutor() as executor:
+            future_to_text = {executor.submit(self.translate_text, clean_text, target_lang): (original_text, i, new_line)
+                            for original_text, i, new_line in texts_to_translate}
+
+            for future in future_to_text:
+                original_text, i, new_line = future_to_text[future]
+                try:
+                    translated_clean = future.result()
+                    translated_text = self.restore_renpy_tags(translated_clean, preserved_tags)  # Restaurez les balises appropriées
+                    translated_text = re.sub(r'\s+', ' ', translated_text).strip()
+                    translated_text = translated_text.replace('"', '\\"')  # Échappe les guillemets internes
+                    translated_count += 1
+
+                    # Remplacez dans la ligne
+                    new_line = new_line.replace(f'"{original_text}"', f'"{translated_text}"', 1)
+                    translated_lines.append(new_line)
+                except Exception as e:
+                    print(f"❌ Erreur ligne {i+1}: {e}")
+                    translated_lines.append(new_line)  # Gardez la ligne d'origine en cas d'erreur
+                    error_count += 1
+
+
+
+
         # Correction des guillemets/apostrophes
         translated_lines = self.fix_quotes_universal(translated_lines)
+
 
         # Écrit le fichier traduit
         with open(input_file, 'w', encoding='utf-8') as f:
@@ -379,27 +425,27 @@ screen my_preferences():
         if not game_path:
             print("❌ Dossier 'game' introuvable! Assurez-vous d'être dans le répertoire du projet Ren'Py")
             return
-        
+
         print(f"🎮 Projet Ren'Py détecté: {game_path}")
         translation_path = self.get_translation_path(game_path, language)
-        
+
         if not os.path.exists(translation_path):
             print(f"❌ Dossier de traductions introuvable: {translation_path}")
-            print("Assurez-vous que les fichiers de traduction existent dans ce dossier")
             return
-        
+
         backup_path = self.create_backup(translation_path)
         rpy_files = self.find_rpy_files(translation_path)
-        
+
         if not rpy_files:
             print(f"❌ Aucun fichier .rpy trouvé dans {translation_path}")
             return
-        
+
         print(f"📁 {len(rpy_files)} fichiers .rpy trouvés, lancement de la traduction...")
         total_translated = 0
         total_errors = 0
 
-        for rpy_file in rpy_files:
+        for index, rpy_file in enumerate(rpy_files):
+            print(f"👉 Traduction du fichier: {rpy_file} ({index + 1}/{len(rpy_files)})")
             translated, errors = self.translate_file(rpy_file, target_lang=target_lang)
             total_translated += translated
             total_errors += errors
