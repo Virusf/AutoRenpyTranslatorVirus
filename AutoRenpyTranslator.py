@@ -445,7 +445,7 @@ screen my_preferences():
         total_errors = 0
 
         for index, rpy_file in enumerate(rpy_files):
-            print(f"👉 Traduction du fichier: {rpy_file} ({index + 1}/{len(rpy_files)})")
+            print(f"\n👉 Traduction du fichier: {rpy_file} ({index + 1}/{len(rpy_files)})")
             translated, errors = self.translate_file(rpy_file, target_lang=target_lang)
             total_translated += translated
             total_errors += errors
