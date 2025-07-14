@@ -148,6 +148,12 @@ class RenpyAutoTranslator:
             print(f"❌ Erreur LibreTranslate : {e}")
             return text
 
+    def format_text(self, text: str) -> str:
+        # Ajoute des espaces autour des crochets, si nécessaire
+        text = re.sub(r'(?<=[a-zA-Z0-9])\[', ' [', text)  # Ajoute un espace avant le [
+        text = re.sub(r'\](?=[a-zA-Z0-9])', '] ', text)  # Ajoute un espace après le ]
+        return text
+
     def preserve_renpy_tags(self, text: str):
         """Préserve les balises Ren'Py et retours à la ligne avec numérotation séquentielle"""
         # Pattern plus complet pour capturer toutes les balises Ren'Py
@@ -263,9 +269,12 @@ class RenpyAutoTranslator:
                 new_line = line
                 for match in matches:
                     original_text = match.group(1)
+
+                    # Formate le texte avant la traduction
+                    formatted_text = self.format_text(original_text)
                     
                     # Préserve les balises Ren'Py
-                    clean_text, preserved_tags = self.preserve_renpy_tags(original_text)
+                    clean_text, preserved_tags = self.preserve_renpy_tags(formatted_text)
                     
                     # Vérifie si il y a du texte à traduire après suppression des balises
                     text_to_check = re.sub(r'\s*RENPYTAG\d+END\s*', '', clean_text).strip()
@@ -280,6 +289,9 @@ class RenpyAutoTranslator:
                             
                             # Restaure les balises
                             translated_text = self.restore_renpy_tags(translated_clean, preserved_tags)
+
+                            # Correction du texte traduit pour ajouter les espaces
+                            translated_text = self.format_text(translated_text)
                             
                             # Nettoyage final des espaces multiples
                             translated_text = re.sub(r'\s+', ' ', translated_text).strip()
@@ -326,9 +338,6 @@ class RenpyAutoTranslator:
                     translated_lines.append(new_line)  # Gardez la ligne d'origine en cas d'erreur
                     error_count += 1
 
-
-
-
         # Correction des guillemets/apostrophes
         translated_lines = self.fix_quotes_universal(translated_lines)
 
@@ -339,6 +348,7 @@ class RenpyAutoTranslator:
 
         print(f"\n✓ {translated_count} lignes traduites – ⚠ {error_count} erreurs dans {input_file}")
         return translated_count, error_count
+
 
     def generate_language_files(self, game_path: str):
         files_content = {

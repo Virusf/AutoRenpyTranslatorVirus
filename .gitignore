@@ -172,6 +172,7 @@ exemple_project/
 game/
 tests/
 examples/
+french/
 # Temporary files
 tmp/
 temp/
