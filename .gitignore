@@ -169,6 +169,13 @@ backup_translations_*/
 # Test projects
 test_project/
 exemple_project/
+game/
+tests/
+examples/
+# Temporary files
+tmp/
+temp/
+
 
 # Logs
 *.log
