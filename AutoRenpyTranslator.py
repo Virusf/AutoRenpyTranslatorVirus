@@ -159,9 +159,14 @@ class RenpyAutoTranslator:
             return text
 
     def format_text(self, text: str) -> str:
-        # Ajoute des espaces autour des crochets, si nécessaire
-        text = re.sub(r'(?<!\s)(?<=\w)\[', ' [', text)  # Ajoute un espace avant le [
-        text = re.sub(r'\](?=\w)', '] ', text)  # Ajoute un espace après le ]
+        # Ajoute des espaces autour des crochets et des balises Ren'Py
+        text = re.sub(r'(?<!\s)(?<=\w)\[', ' [', text)  # Espace avant [
+        text = re.sub(r'\](?=\w)', '] ', text)          # Espace après ]
+
+        # Ajoute des espaces autour des accolades {balise}
+        text = re.sub(r'(?<!\s)(\{[^}]+\})', r' \1', text)  # Espace avant {xxx}
+        text = re.sub(r'(\{[^}]+\})(?!\s)', r'\1 ', text)   # Espace après {xxx}
+
         return text
 
     def preserve_renpy_tags(self, text: str):
