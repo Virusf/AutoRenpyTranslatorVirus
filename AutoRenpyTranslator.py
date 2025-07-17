@@ -10,7 +10,8 @@ from datetime import datetime
 from typing import List
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 
 def install_and_import(package_name, pip_name=None):
@@ -68,11 +69,20 @@ requests, Translator = safe_import()
 
 from tqdm import tqdm
 
+# Lock pour les affichages thread-safe
+print_lock = threading.Lock()
+
+def thread_safe_print(*args, **kwargs):
+    """Fonction d'affichage thread-safe"""
+    with print_lock:
+        print(*args, **kwargs)
+
 class RenpyAutoTranslator:
-    def __init__(self, service='google', libretranslate_url='http://localhost:5000'):
+    def __init__(self, service='google', libretranslate_url='http://localhost:5000', max_workers=3):
         self.service = service
         self.libretranslate_url = libretranslate_url
         self.google_translator = None
+        self.max_workers = max_workers
 
         if service == 'google':
             try:
@@ -130,7 +140,7 @@ class RenpyAutoTranslator:
             result = self.google_translator.translate(text, dest=target_lang)
             return result.text
         except Exception as e:
-            print(f"❌ Erreur Google Translate : {e}")
+            thread_safe_print(f"❌ Erreur Google Translate : {e}")
             return text
 
     def _translate_libretranslate(self, text, target_lang):
@@ -145,7 +155,7 @@ class RenpyAutoTranslator:
             response = requests.post(f"{self.libretranslate_url}/translate", headers=headers, json=data)
             return response.json()["translatedText"]
         except Exception as e:
-            print(f"❌ Erreur LibreTranslate : {e}")
+            thread_safe_print(f"❌ Erreur LibreTranslate : {e}")
             return text
 
     def format_text(self, text: str) -> str:
@@ -169,7 +179,6 @@ class RenpyAutoTranslator:
         replaced = pattern.sub(replacer, text)
         return replaced, tags
 
-
     def restore_renpy_tags(self, translated: str, original_tags: List[str]):
         """Restaure les balises Ren'Py avec gestion robuste des erreurs"""
         if not original_tags:
@@ -184,10 +193,10 @@ class RenpyAutoTranslator:
                 if 0 <= idx < len(original_tags):
                     return original_tags[idx]
                 else:
-                    print(f"⚠ Index de balise invalide: {idx} (max: {len(original_tags)-1})")
+                    thread_safe_print(f"⚠ Index de balise invalide: {idx} (max: {len(original_tags)-1})")
                     return ''
             except ValueError:
-                print(f"⚠ Erreur de parsing d'index: {match.group(1)}")
+                thread_safe_print(f"⚠ Erreur de parsing d'index: {match.group(1)}")
                 return ''
 
         restored = pattern_tag.sub(restore, translated)
@@ -197,7 +206,6 @@ class RenpyAutoTranslator:
         restored = orphan_pattern.sub('', restored)
 
         return restored
-
 
     def fix_quotes_universal(self, lines):
         """
@@ -228,28 +236,14 @@ class RenpyAutoTranslator:
                 fixed.append(line)
         return fixed
 
-
-    def batch_translate_texts(texts, target_lang):
-        """Traduit un lot de textes en une seule fois."""
-        # Regroupez les textes en une seule string séparée par des délimiteurs
-        batch_text = "\n".join(texts)
-        translated_batch = self.translate_text(batch_text, target_lang)
-        # Splitez le résultat dans une liste
-        return translated_batch.split("\n")
-
-
-
     def translate_file(self, input_file: str, target_lang: str = 'fr'):
+        """Traduit un fichier RPY individuel"""
         with open(input_file, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         
         translated_lines = []
         translated_count = 0
         error_count = 0
-
-        # Préparer une liste pour les futures traductions
-        texts_to_translate = []
-
 
         ignore_patterns = [
             r'^\s*#',                       # Commentaires
@@ -258,11 +252,14 @@ class RenpyAutoTranslator:
             r'^\s*new\s+"old:.*"',          # new "old:xxxx"
             r'^\s*new\s*".*_\d+(\.\d+)*_?\d*"',  # new "xxx_1234" etc
             r'.*\.webp.*"',                  # ❌ Ignore les fichiers image
-            r'.*\.(png|jpg|jpeg|gif).*"',    # (optionnel) pour d'autres formats
+            r'.*\.(webp|png|jpg|jpeg|gif|bmp|mp3|ogg|wav|mp4|mkv|avi|mov|flac|svg|ico|ttf|otf|eot|woff2?).*"',    # (optionnel) pour d'autres formats
         ]
 
-
-        for i, line in enumerate(tqdm(lines, desc=f"Traduction – {os.path.basename(input_file)}", ncols=100)):
+        # Utilise une progress bar avec position différente pour chaque thread
+        thread_id = threading.get_ident()
+        desc = f"[Thread {thread_id % 1000}] {os.path.basename(input_file)}"
+        
+        for i, line in enumerate(tqdm(lines, desc=desc, position=thread_id % self.max_workers, leave=False)):
             if any(re.match(p, line) for p in ignore_patterns):
                 translated_lines.append(line)
                 continue
@@ -304,10 +301,10 @@ class RenpyAutoTranslator:
                             translated_text = translated_text.replace('"', '\\"')
                             
                             translated_count += 1
-                            time.sleep(0.1)  # Évite les limites de taux
+                            time.sleep(0.05)  # Réduit le délai pour LibreTranslate
                             
                         except Exception as e:
-                            print(f"❌ Erreur ligne {i+1}: {e}")
+                            thread_safe_print(f"❌ Erreur ligne {i+1} dans {input_file}: {e}")
                             translated_text = original_text
                             error_count += 1
                     
@@ -318,41 +315,15 @@ class RenpyAutoTranslator:
             else:
                 translated_lines.append(line)
 
-
-
-        # Utilisez ThreadPoolExecutor pour traduire les textes en parallèle
-        with ThreadPoolExecutor() as executor:
-            future_to_text = {executor.submit(self.translate_text, clean_text, target_lang): (original_text, i, new_line)
-                            for original_text, i, new_line in texts_to_translate}
-
-            for future in future_to_text:
-                original_text, i, new_line = future_to_text[future]
-                try:
-                    translated_clean = future.result()
-                    translated_text = self.restore_renpy_tags(translated_clean, preserved_tags)  # Restaurez les balises appropriées
-                    translated_text = re.sub(r'\s+', ' ', translated_text).strip()
-                    translated_text = translated_text.replace('"', '\\"')  # Échappe les guillemets internes
-                    translated_count += 1
-
-                    # Remplacez dans la ligne
-                    new_line = new_line.replace(f'"{original_text}"', f'"{translated_text}"', 1)
-                    translated_lines.append(new_line)
-                except Exception as e:
-                    print(f"❌ Erreur ligne {i+1}: {e}")
-                    translated_lines.append(new_line)  # Gardez la ligne d'origine en cas d'erreur
-                    error_count += 1
-
         # Correction des guillemets/apostrophes
         translated_lines = self.fix_quotes_universal(translated_lines)
-
 
         # Écrit le fichier traduit
         with open(input_file, 'w', encoding='utf-8') as f:
             f.writelines(translated_lines)
 
-        print(f"\n✓ {translated_count} lignes traduites – ⚠ {error_count} erreurs dans {input_file}")
+        thread_safe_print(f"✓ {translated_count} lignes traduites – ⚠ {error_count} erreurs dans {os.path.basename(input_file)}")
         return translated_count, error_count
-
 
     def generate_language_files(self, game_path: str):
         files_content = {
@@ -433,7 +404,8 @@ screen my_preferences():
                 f.write(content)
             print(f"✓ Fichier généré : {filepath}")
 
-    def translate_project(self, game_path: str = None, language: str = "french", target_lang: str = 'fr'):
+    def translate_project_parallel(self, game_path: str = None, language: str = "french", target_lang: str = 'fr'):
+        """Traduit un projet complet avec traitement parallèle des fichiers"""
         if game_path is None:
             game_path = self.find_game_folder()
         if not game_path:
@@ -454,22 +426,47 @@ screen my_preferences():
             print(f"❌ Aucun fichier .rpy trouvé dans {translation_path}")
             return
 
-        print(f"📁 {len(rpy_files)} fichiers .rpy trouvés, lancement de la traduction...")
+        print(f"📁 {len(rpy_files)} fichiers .rpy trouvés")
+        print(f"🚀 Lancement de la traduction parallèle avec {self.max_workers} threads...")
+        
         total_translated = 0
         total_errors = 0
+        completed_files = 0
 
-        for index, rpy_file in enumerate(rpy_files):
-            print(f"\n👉 Traduction du fichier: {rpy_file} ({index + 1}/{len(rpy_files)})")
-            translated, errors = self.translate_file(rpy_file, target_lang=target_lang)
-            total_translated += translated
-            total_errors += errors
+        # Traitement parallèle des fichiers
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # Soumet tous les fichiers pour traduction
+            future_to_file = {
+                executor.submit(self.translate_file, rpy_file, target_lang): rpy_file 
+                for rpy_file in rpy_files
+            }
+            
+            # Collecte les résultats au fur et à mesure
+            for future in as_completed(future_to_file):
+                rpy_file = future_to_file[future]
+                try:
+                    translated, errors = future.result()
+                    total_translated += translated
+                    total_errors += errors
+                    completed_files += 1
+                    
+                    thread_safe_print(f"📋 Progression: {completed_files}/{len(rpy_files)} fichiers traités")
+                    
+                except Exception as e:
+                    thread_safe_print(f"❌ Erreur lors du traitement de {rpy_file}: {e}")
+                    total_errors += 1
+                    completed_files += 1
 
         self.generate_language_files(game_path)
-        print(f"🎉 Traduction terminée : {total_translated} lignes traduites, {total_errors} erreurs.")
+        print(f"\n🎉 Traduction terminée : {total_translated} lignes traduites, {total_errors} erreurs.")
         print(f"💾 Une sauvegarde est disponible dans : {backup_path}")
 
+    def translate_project(self, game_path: str = None, language: str = "french", target_lang: str = 'fr'):
+        """Wrapper pour la compatibilité - utilise le traitement parallèle"""
+        self.translate_project_parallel(game_path, language, target_lang)
+
 def main():
-    print("🎮 Auto-traducteur Ren'Py - Version Stable")
+    print("🎮 Auto-traducteur Ren'Py - Version Parallèle")
     print("=" * 50)
     
     parser = argparse.ArgumentParser(description='Auto-traducteur automatique pour projets Ren\'Py')
@@ -481,13 +478,22 @@ def main():
     parser.add_argument('--libretranslate-url', default='http://localhost:5000',
                        help='URL LibreTranslate (par défaut: http://localhost:5000)')
     parser.add_argument('-f', '--file', help='Traduire un fichier spécifique au lieu du projet complet')
+    parser.add_argument('--files', nargs='+', help='Traduire plusieurs fichiers RPY dans le dossier de langue')
+    parser.add_argument('--max-workers', type=int, default=3, 
+                       help='Nombre max de fichiers traités en parallèle (par défaut: 3)')
     
     args = parser.parse_args()
     
+    # Limite le nombre de workers pour éviter la surcharge
+    max_workers = min(args.max_workers, 5)  # Max 5 threads
+    
     translator = RenpyAutoTranslator(
         service=args.service,
-        libretranslate_url=args.libretranslate_url
+        libretranslate_url=args.libretranslate_url,
+        max_workers=max_workers
     )
+    
+    print(f"⚙️ Configuration: {args.service} avec {max_workers} thread(s) parallèle(s)")
     
     # Mode fichier unique
     if args.file:
@@ -498,8 +504,51 @@ def main():
         else:
             print(f"❌ Fichier introuvable: {args.file}")
         return
+
+    # Mode multi-fichiers dans le dossier langue (avec parallélisation)
+    if args.files:
+        game_path = args.path if args.path else translator.find_game_folder()
+        if not game_path:
+            print("❌ Dossier 'game' introuvable")
+            return
+
+        translation_path = translator.get_translation_path(game_path, args.translation_lang)
+        
+        # Créer la liste des fichiers complets
+        file_paths = []
+        for filename in args.files:
+            file_path = os.path.join(translation_path, filename)
+            if os.path.exists(file_path):
+                file_paths.append(file_path)
+            else:
+                print(f"❌ Fichier introuvable : {file_path}")
+        
+        if file_paths:
+            print(f"🚀 Traduction parallèle de {len(file_paths)} fichiers...")
+            total_translated = 0
+            total_errors = 0
+            
+            # Traitement parallèle des fichiers spécifiés
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_file = {
+                    executor.submit(translator.translate_file, file_path, args.lang): file_path 
+                    for file_path in file_paths
+                }
+                
+                for future in as_completed(future_to_file):
+                    file_path = future_to_file[future]
+                    try:
+                        translated, errors = future.result()
+                        total_translated += translated
+                        total_errors += errors
+                    except Exception as e:
+                        print(f"❌ Erreur lors du traitement de {file_path}: {e}")
+                        total_errors += 1
+            
+            print(f"✅ Terminé: {total_translated} lignes traduites, {total_errors} erreurs au total")
+        return
     
-    # Mode projet complet
+    # Mode projet complet avec parallélisation
     translator.translate_project(
         game_path=args.path,
         language=args.translation_lang,
