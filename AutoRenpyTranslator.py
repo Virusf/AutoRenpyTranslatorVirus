@@ -256,7 +256,6 @@ class RenpyAutoTranslator:
             r'^\s*old\s+"',                 # Ligne old
             r'^\s*new\s+"old:.*"',          # new "old:xxxx"
             r'^\s*new\s*".*_\d+(\.\d+)*_?\d*"',  # new "xxx_1234" etc
-            r'.*\.webp.*"',                  # ❌ Ignore les fichiers image
             r'.*\.(webp|png|jpg|jpeg|gif|bmp|mp3|ogg|wav|mp4|mkv|avi|mov|flac|svg|ico|ttf|otf|eot|woff2?).*"',    # (optionnel) pour d'autres formats
         ]
 
