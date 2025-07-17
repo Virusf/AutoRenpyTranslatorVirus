@@ -150,8 +150,8 @@ class RenpyAutoTranslator:
 
     def format_text(self, text: str) -> str:
         # Ajoute des espaces autour des crochets, si nécessaire
-        text = re.sub(r'(?<=[a-zA-Z0-9])\[', ' [', text)  # Ajoute un espace avant le [
-        text = re.sub(r'\](?=[a-zA-Z0-9])', '] ', text)  # Ajoute un espace après le ]
+        text = re.sub(r'(?<!\s)(?<=\w)\[', ' [', text)  # Ajoute un espace avant le [
+        text = re.sub(r'\](?=\w)', '] ', text)  # Ajoute un espace après le ]
         return text
 
     def preserve_renpy_tags(self, text: str):
@@ -169,14 +169,15 @@ class RenpyAutoTranslator:
         replaced = pattern.sub(replacer, text)
         return replaced, tags
 
+
     def restore_renpy_tags(self, translated: str, original_tags: List[str]):
         """Restaure les balises Ren'Py avec gestion robuste des erreurs"""
         if not original_tags:
             return translated
-            
-        # Pattern pour retrouver les marqueurs avec espaces optionnels
-        pattern_tag = re.compile(r'\s*RENPYTAG(\d+)END\s*')
-        
+
+        # Pattern insensible à la casse, avec espaces tolérés
+        pattern_tag = re.compile(r'\s*RENPYTAG(\d+)END\s*', flags=re.IGNORECASE)
+
         def restore(match):
             try:
                 idx = int(match.group(1))
@@ -184,18 +185,19 @@ class RenpyAutoTranslator:
                     return original_tags[idx]
                 else:
                     print(f"⚠ Index de balise invalide: {idx} (max: {len(original_tags)-1})")
-                    return ''  # Supprime le marqueur invalide
+                    return ''
             except ValueError:
                 print(f"⚠ Erreur de parsing d'index: {match.group(1)}")
                 return ''
-        
+
         restored = pattern_tag.sub(restore, translated)
-        
-        # Nettoyage final : supprime les marqueurs orphelins
-        orphan_pattern = re.compile(r'\s*RENPYTAG\d+END\s*')
+
+        # Nettoyage final : supprime les balises orphelines restantes (même mal formatées)
+        orphan_pattern = re.compile(r'\s*RENPYTAG\d+END\s*', flags=re.IGNORECASE)
         restored = orphan_pattern.sub('', restored)
-        
+
         return restored
+
 
     def fix_quotes_universal(self, lines):
         """
@@ -255,6 +257,8 @@ class RenpyAutoTranslator:
             r'^\s*old\s+"',                 # Ligne old
             r'^\s*new\s+"old:.*"',          # new "old:xxxx"
             r'^\s*new\s*".*_\d+(\.\d+)*_?\d*"',  # new "xxx_1234" etc
+            r'.*\.webp.*"',                  # ❌ Ignore les fichiers image
+            r'.*\.(png|jpg|jpeg|gif).*"',    # (optionnel) pour d'autres formats
         ]
 
 
